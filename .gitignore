@@ -2,6 +2,12 @@
 *.mcp
 *.mcs
 *.mcw
+*.cof
+*.hex
+*.map
+*.err
+*.lst
+*.o
 #Carpetas que no se suben
 #output_files/
 #incremental_db/

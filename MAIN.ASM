@@ -1,0 +1,177 @@
+; FILE: MAIN.ASM
+; AUTOR: ARREGUIN HERNANDEZ JULIO DAVID
+; DATE: 31/03/2026
+; BRIEF: CONTROL DE INYECCION ELECTRONICA
+; VERSION: 0.1
+; Copyright (c) 2024
+; LICENCE: MIT
+        
+
+		#INCLUDE <./HEADER.ASM>
+		#INCLUDE <./MACROS_CARGA_DATOS_SUBRUTINAS_T.asm>
+		#INCLUDE <./MACROS_TIEMPOS_FIJOS.asm>
+		;---------------------------------------------------------
+		;				DEFINICION DE CONSTANTES
+		;---------------------------------------------------------
+N_TEEHT EQU	.35; NUMERO DE DIENTES RELUCTOR
+INI_TURN EQU .2; NUMERO DE VUELTAS INICIALES
+
+
+		
+		;---------------------------------------------------------
+		;			DEFINICIÓN DE ACCIONES O MNEMÓNICOS
+		;				PARA LOS PINES DE SALIDA
+		;---------------------------------------------------------
+		#DEFINE 	PMS_C1_SIGNAL			GPIO,.0
+		#DEFINE 	CKP_SIGNAL				GPIO,.2; HABILITADO PARA INT
+
+
+
+
+		;---------------------------------------------------------
+		;              DEFINICION DE REGISTROS (GPR)
+		;---------------------------------------------------------
+		; REGISTROS DEL 0X50 AL 0X58 RESERVADOS PARA SUBRUTINAS DE TIEMPO
+		; REGISTROS DEL 0X40 AL 0X4D RESERVADOS PARA RESCATE Y RECUPERA
+CKP_CONT 	EQU	0X20; CONTADOR DE PULSOS CKP INICIALES
+
+
+
+
+;-------------------------------------------------------------------------------
+;********************************** SETUP **************************************
+;-------------------------------------------------------------------------------
+
+		;---------------------------------------------------------
+		;					  CONFIG I/O PINS
+		;---------------------------------------------------------
+		;B1
+		BCF				TRISIO,.0 ;PMS_C1_SIGNAL COMO SALIDA
+		BSF				TRISIO,.2 ;CKP_SIGNAL COMO ENTRADA
+		BCF				STATUS,RP0			;B0
+
+;-------------------------------------------------------------------------------
+;********************************* FIRMWARE *************************************
+;-------------------------------------------------------------------------------
+		;---------------------------------------------------------
+		; 					CONDICIONES INICIALES
+		;---------------------------------------------------------
+		;CONSTRUIR EL TOTAL DE PULSOS INICIALES
+INIT_PULSES_CONT EQU N_TEEHT*INI_TURN; NOTA: INIT_PULSE_CONT <= 255
+		;LIMPIA EL CONTADOR CKP_CONT:
+		CLRF			CKP_CONT
+
+
+		;---------------------------------------------------------
+		;			CONFIGURACION DE TIMER1 (SIN HABILITAR)
+		;---------------------------------------------------------
+		;BIT 0 (BIT DE ENCENDIDO):
+		;	HABILITA TIMER1 								[1]
+		;	DETIENE EL TIMMER1 								[0]
+
+		;BIT 1 (BIT SELECTOR DE FUENTE DE RELOJ);
+		; 	RELOJ EXTERNO PROVENIENTE DEL PIN T1OSO/T1CLK 	[1]
+		;	RELOJ INTERNO (4Mhz) 							[0]
+
+		;BIT 2 (BIT DE CONTROL DE SINCRONIZACIÓN PARA LA ENTRA-
+		;DA DEL RELOJ EXTERNO)
+		;	IF (BIT 1 == 1){
+		;		ENTRADA DE RELOJ EXTERNA NO SINCRONIZADA 	[1]
+		;		ENTRADA DE RELOJ EXTERNA SINCRONIZADA 		[0]
+		;	}
+		;	ELSE {
+		;		ESTE BIT ES IGNORADO CUANDO TMR1 USA INT CLK.
+		;	}
+
+
+		; BIT 3 (BIT CONTROLADOR PARA HABILITAR EL OSCILADOR LP)
+		; IF (INTOSC CON SALIDA EN CLKOUT ESTÁ ACTIVADA)
+		;	LP OSCILADOR ES ACTIVADO PARA EL RELOJ TIMMER 1	[1]
+		;	OSCILADOR LP ES APAGADO							[0]
+		; ELSE
+		; 	ESTE BIT ES IGNORADO
+
+
+		; BIT 4-5 (BITS PARA LA SELECCION DEL PRESCALER)
+			;11 = 1:8 Prescale Value
+			;10 = 1:4 Prescale Value
+			;01 = 1:2 Prescale Value
+			;00 = 1:1 Prescale Value
+
+		; BIT 6 (BIT PARA HABILITAR EL TIMER1 POR PIN DE ENTRADA)
+		; IF TMR1ON (BIT 0) == 0
+		;	ESTE BIT ES IGNORADO
+		; ELSE
+		;	TIMER 1 ESTÁ ENCENDENDO SI T1G PIN ES '0'		[1]
+		;	TIMER 1 ESTÁ ENCENDIDO							[0]
+
+
+		MOVLW			B'00000000'
+		MOVWF			T1CON
+
+
+
+
+
+
+		;---------------------------------------------------------
+		;  CONFIGURACION DE GP2 PARA INTERRUPCION (SIN HABILITAR)
+		;---------------------------------------------------------
+		; LA INTERRUPCIÓN SERÁ DIPSTARA POR UN FLACO DE:
+		; 	FLANCO DE SUBIDA 			OPTION_REG,INTEDG = [1]
+		;	FLANCO DE BAJADA			OPTION_REG,INTEDG = [0]
+		
+		BSF				STATUS,RP0;		B1
+		BSF				OPTION_REG,INTEDG
+		BCF				STATUS,RP0;		B0
+
+
+
+
+		;---------------------------------------------------------
+		;    START MOTOR SIGNAL (DETECCIÓN DE GIROS INICIALES)
+		;---------------------------------------------------------
+INI_DETECT:
+		;¿PULSO EN EL CKP?
+		BTFSC			CKP_SIGNAL
+		GOTO			$-1
+		BTFSS			CKP_SIGNAL
+		;	NO. SIGUE VERIFICANDO
+		GOTO 			$-1
+		;	SI.
+		NOP
+		NOP
+		NOP
+		;	INCREMENTA EN 1 CKP_CONT
+		INCF			CKP_CONT,F	
+		;	VERIFICA SI ¿YA SE ALCANZÓ LA CUOTA INICIAL DE PULSOS?
+		MOVLW			INIT_PULSES_CONT
+		XORWF			CKP_CONT,W
+		BTFSS			STATUS,Z
+		;	NO SE A ALCANZADO. REGRESA A DETECTAR PULSOS
+		GOTO			INI_DETECT
+		;	YA SE ALCANZÓ
+		BSF				PMS_C1_SIGNAL
+		GOTO			$
+
+
+
+
+
+RSI:	
+		NOP
+		;BAJA LA BANDERA DE LA INTERRUPCION:
+		BCF				INTCON,INTF
+		#INCLUDE <./RECUPERA.ASM>	
+		RETFIE
+
+
+
+
+
+
+
+
+
+		#INCLUDE <./SUBRUTINAS_TIEMPO_V2.asm>
+		END
