@@ -24,4 +24,3 @@
     MOVWF STATUS
     SWAPF W_R, W
     SWAPF W_R,W
-    RETFIE
